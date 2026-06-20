@@ -1,0 +1,3 @@
+- Changing a Zn(100) slab out for a Zn(002) to match energies
+    - I was told that swapping out the slab instead of the PEG molecule is more conventional and would most likely lead to better results
+    - Changed it to Zn(002) and organized a close-packed slab and the PEG is still floating...
