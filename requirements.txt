@@ -1,0 +1,19 @@
+# fairchem-core development environment
+#
+# Python: 3.11–3.13 required by fairchem-core (>=3.11,<3.14). This env uses 3.12.
+#
+# Only the explicitly-installed (top-level) packages are listed here; their
+# transitive dependencies (ray, ase, scipy, numpy, e3nn, fastapi, etc.) resolve
+# automatically and are intentionally omitted.
+#
+# torch must be the CUDA 12.8 (cu128) build: the default PyPI wheel is CPU-only,
+# and an RTX 50-series (Blackwell, sm_120) GPU needs cu128 kernels. The
+# --extra-index-url below points pip at PyTorch's CUDA wheel index for torch,
+# while everything else comes from PyPI.
+#
+# Reproduce with:  pip install -r requirements.txt
+
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+torch==2.8.0+cu128
+fairchem-core==2.21.0
