@@ -2,6 +2,7 @@ from pathlib import Path
 import numpy as np
 from ase import Atoms
 from ase.build import hcp0001
+from ase.constraints import FixAtoms
 from ase.io import write
 from ase.optimize import LBFGS
 from fairchem.core import pretrained_mlip, FAIRChemCalculator
@@ -36,6 +37,11 @@ calc = FAIRChemCalculator(predictor, task_name='oc20')
 # surface supercell, 4 atomic layers.
 
 slab = hcp0001('Zn', size=(3, 3, 4), vacuum=8.0, periodic=True)
+
+# Record the slab atom count now, before PEG-1 is added, so the slab atoms can
+# be identified by index (0 .. nSlabAtoms-1) when constraining them below.
+
+nSlabAtoms = len(slab)
 
 # PEG-1 = monoethylene glycol (ethylene glycol), HO-CH2-CH2-OH (C2H6O2).
 # Not available in ASE's molecule() database, so build it from explicit
@@ -82,6 +88,14 @@ print(
     f'fractional a[{adsFrac[:, 0].min():.2f}, {adsFrac[:, 0].max():.2f}] '
     f'b[{adsFrac[:, 1].min():.2f}, {adsFrac[:, 1].max():.2f}] within the cell'
 )
+
+# Lock every Zn(002) slab layer: fix all slab atoms so the surface is held
+# rigid at its bulk-terminated geometry and only PEG-1 is free to relax. This
+# rigid-surface approximation isolates the PEG-1 adsorption geometry/energy on
+# the ideal Zn(002) facet and speeds up the optimisation.
+
+slab.set_constraint(FixAtoms(indices=range(nSlabAtoms)))
+print(f'Locked all {nSlabAtoms} Zn(002) slab atoms (all 4 layers); only PEG-1 relaxes')
 
 slab.calc = calc
 
