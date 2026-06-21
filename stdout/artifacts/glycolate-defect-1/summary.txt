@@ -1,0 +1,31 @@
+Hunting a chemisorbed state: glycol / water / glycolate on Zn facets + defects
+E_ads(glycolate) is a DISSOCIATIVE energy referenced to 1/2 H2 (not a molecular
+  adsorption energy): glycol(g) + slab -> glycolate(O-bound) + 1/2 H2(g).
+dE_displace = E_ads(glycol) - E_ads(water)    ; <0 => glycol out-binds water
+dE_deprot   = E_ads(glycolate) - E_ads(glycol); <0 => deprotonation deepens binding
+Gas refs (eV): water=-14.152, glycol=-52.301, H2=-6.941
+
+facet            E_ads(water) E_ads(glycol) E_ads(glycolate) dE_displace dE_deprot
+Zn(002)                -0.055        -0.179            0.374      -0.124    +0.553
+Zn(100)                -0.035        -0.197           -0.473      -0.162    -0.276
+Zn(002)-adatom         -0.018        -0.155           -0.106      -0.137    +0.049
+Zn(002)-vacancy         0.083        -0.245            0.180      -0.328    +0.425
+
+Per-adsorbate best contact (min anchor-Zn distance):
+  Zn(002)          water    : O-Zn = 3.97 Ang  (floating)
+  Zn(002)          glycol   : O-Zn = 4.17 Ang  (floating)
+  Zn(002)          glycolate: O-Zn = 2.07 Ang  (chemisorbed)
+  Zn(100)          water    : O-Zn = 3.09 Ang  (physisorbed)
+  Zn(100)          glycol   : O-Zn = 2.89 Ang  (physisorbed)
+  Zn(100)          glycolate: O-Zn = 1.98 Ang  (chemisorbed)
+  Zn(002)-adatom   water    : O-Zn = 3.52 Ang  (floating)
+  Zn(002)-adatom   glycol   : O-Zn = 3.52 Ang  (floating)
+  Zn(002)-adatom   glycolate: O-Zn = 1.84 Ang  (chemisorbed)
+  Zn(002)-vacancy  water    : O-Zn = 4.46 Ang  (floating)
+  Zn(002)-vacancy  glycol   : O-Zn = 5.56 Ang  (floating)
+  Zn(002)-vacancy  glycolate: O-Zn = 2.03 Ang  (chemisorbed)
+
+Note: neutral fragments, vacuum, no applied potential/explicit electrolyte.
+Treat as relative mechanistic screening, not absolute interfacial energetics.
+A chemisorbed (O-Zn < 2.4 Ang) glycolate or defect-site binding is the signal
+that the neutral flat-terrace floating is lifted by deprotonation / under-coordination.
