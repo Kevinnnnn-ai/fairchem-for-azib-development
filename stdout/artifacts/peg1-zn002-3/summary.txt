@@ -1,0 +1,11 @@
+PEG-1 on Zn(002): O-down placement, top 2 layers relaxed, site scan
+References: E_slab=-25.475 eV  E_mol=-52.301 eV
+
+site              E_ads (eV)    O1-Zn    O2-Zn  min-gap
+atop                  -0.179     4.17     6.68     4.28
+hollow1-hcp           -0.175     4.15     6.25     4.04
+bridge                -0.168     3.96     6.46     3.93
+hollow2-fcc           -0.165     4.38     6.36     4.21
+
+Best: atop  E_ads=-0.179 eV  closest O-Zn=4.17 Ang
+Baseline (all layers locked, flat start) floated: O-Zn 4.65 Ang, no binding.

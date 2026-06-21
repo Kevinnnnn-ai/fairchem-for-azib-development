@@ -1,0 +1,31 @@
+W0620 19:17:15.274000 21452 Lib\site-packages\torch\distributed\elastic\multiprocessing\redirects.py:29] NOTE: Redirects are currently not supported in Windows or MacOs.
+C:\Users\Admin\files\projects\fairchem-for-azib-development\.env.local\Lib\site-packages\ase\io\extxyz.py:320: UserWarning: Skipping unhashable information adsorbate_info
+  warnings.warn('Skipping unhashable information '
+C:\Users\Admin\files\projects\fairchem-for-azib-development\.env.local\Lib\site-packages\ase\io\extxyz.py:320: UserWarning: Skipping unhashable information adsorbate_info
+  warnings.warn('Skipping unhashable information '
+Saving run output to C:\Users\Admin\files\projects\fairchem-for-azib-development\stdout\runs\peg1-zn002-1
+Slab: 36 Zn in 4 layers; fixing bottom 2 (18 atoms), relaxing top 2 + adsorbate
+Initial geometries (lowest adsorbate atom should be O1):
+  [atop         ] lowest atom O at gap 2.00 Ang
+  [bridge       ] lowest atom O at gap 2.00 Ang
+  [hollow1-hcp  ] lowest atom O at gap 2.00 Ang
+  [hollow2-fcc  ] lowest atom O at gap 2.00 Ang
+References: E_slab = -25.475 eV, E_mol (PEG-1 gas) = -52.301 eV
+[atop         ] E_ads = -0.179 eV   O1-Zn = 4.17   O2-Zn = 6.68   min-gap = 4.28 Ang
+[bridge       ] E_ads = -0.168 eV   O1-Zn = 3.96   O2-Zn = 6.46   min-gap = 3.93 Ang
+[hollow1-hcp  ] E_ads = -0.175 eV   O1-Zn = 4.15   O2-Zn = 6.25   min-gap = 4.04 Ang
+[hollow2-fcc  ] E_ads = -0.165 eV   O1-Zn = 4.38   O2-Zn = 6.36   min-gap = 4.21 Ang
+
+PEG-1 on Zn(002): O-down placement, top 2 layers relaxed, site scan
+References: E_slab=-25.475 eV  E_mol=-52.301 eV
+
+site              E_ads (eV)    O1-Zn    O2-Zn  min-gap
+atop                  -0.179     4.17     6.68     4.28
+hollow1-hcp           -0.175     4.15     6.25     4.04
+bridge                -0.168     3.96     6.46     3.93
+hollow2-fcc           -0.165     4.38     6.36     4.21
+
+Best: atop  E_ads=-0.179 eV  closest O-Zn=4.17 Ang
+Baseline (all layers locked, flat start) floated: O-Zn 4.65 Ang, no binding.
+
+Done. Output written to C:\Users\Admin\files\projects\fairchem-for-azib-development\stdout\runs\peg1-zn002-1
