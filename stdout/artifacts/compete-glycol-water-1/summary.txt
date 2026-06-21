@@ -1,0 +1,11 @@
+Competitive adsorption: ethylene glycol vs H2O on Zn facets
+dE = E_ads(glycol) - E_ads(water);  dE < 0 => glycol can displace water
+Gas refs (eV): water=-14.152, glycol=-52.301
+
+facet       E_ads(water)  E_ads(glycol)       dE   verdict
+Zn(002)           -0.055         -0.179   -0.124   glycol displaces water
+Zn(100)           -0.035         -0.197   -0.162   glycol displaces water
+
+Note: neutral molecules, vacuum, no applied potential/explicit electrolyte.
+Treat as relative mechanistic screening, not absolute interfacial energetics.
+Trust dE (a difference) far more than the individual absolute E_ads values.
