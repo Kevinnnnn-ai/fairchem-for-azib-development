@@ -31,7 +31,14 @@ except ImportError:
 
 
 
-def getRunDir(prefix='compete-glycol-water'):
+# The FAIRChem calculator is created once inside main() and shared via this
+# module global (relax() reads it). It stays None until a run starts, so the
+# module can be imported for testing without loading the model.
+calc = None
+
+
+
+def getRunDir(prefix='glycolate-defect'):
     runDirRoot = Path(__file__).resolve().parent.parent / 'stdout' / 'runs'
     runDirRoot.mkdir(parents=True, exist_ok=True)
     i = 1
@@ -41,6 +48,7 @@ def getRunDir(prefix='compete-glycol-water'):
     runDir = runDirRoot / f'{prefix}-{i}'
     runDir.mkdir()
     return runDir
+
 
 
 def buildGlycol():
@@ -67,6 +75,20 @@ def buildGlycol():
 
 
 
+def buildGlycolate():
+
+    # Ethylene glycol with the O1 hydroxyl H (index 8) removed -> alkoxide
+    # HO-CH2-CH2-O(.) (C2H5O2). O1 keeps index 2 (removing a higher index doesn't
+    # shift it) and is now bonded only to C1 (index 0), so it orients O-down with
+    # neighbours=(0,). Treated as a neutral fragment; the missing proton is handled
+    # by the 1/2 H2 reference (see ADSORBATES / refEnergy).
+
+    mol = buildGlycol()
+    del mol[8]
+    return mol
+
+
+
 def buildWater():
 
     # H2O, O-down reference adsorbate. O is index 0 (the binding atom); its two
@@ -83,12 +105,16 @@ def buildWater():
 
 
 
-# Each adsorbate: how to build it, its binding (anchor) atom, and the atoms
-# bonded to that anchor (used to point its lone pairs at the surface).
+# Each adsorbate: how to build it, its binding (anchor) atom, the atoms bonded to
+# that anchor (used to point its lone pairs at the surface), and an optional `ref`
+# overriding the gas reference energy. `ref(eGas, eH2)` lets glycolate use the
+# dissociative 1/2 H2 reference; water/glycol fall back to their own gas energy.
 
 ADSORBATES = {
-    'water':  {'build': buildWater,  'anchor': 0, 'neighbours': (1, 2)},
-    'glycol': {'build': buildGlycol, 'anchor': 2, 'neighbours': (0, 8)},
+    'water':     {'build': buildWater,     'anchor': 0, 'neighbours': (1, 2)},
+    'glycol':    {'build': buildGlycol,    'anchor': 2, 'neighbours': (0, 8)},
+    'glycolate': {'build': buildGlycolate, 'anchor': 2, 'neighbours': (0,),
+                  'ref': lambda eGas, eH2: eGas['glycol'] - 0.5 * eH2},
 }
 
 
@@ -112,14 +138,26 @@ def orientAnchorDown(mol, anchor, neighbours):
 
 
 
+def _fixBottomHalf(slab):
+    # Fix the bottom half of the atomic z-levels (hold the bulk); return indices.
+    zRound = np.round(slab.positions[:, 2], 1)
+    levels = np.unique(zRound)
+    nFix = len(levels) // 2
+    return np.where(np.isin(zRound, levels[:nFix]))[0]
+
+
 def buildFacet(name):
 
     # Return (slab, fixedIdx, slabTop, sites). Fix the bottom half of the atomic
-    # layers (hold the bulk) and relax the top half + adsorbate.
+    # layers (hold the bulk) and relax the top half + adsorbate. A 'Zn(002)-adatom'
+    # or 'Zn(002)-vacancy' suffix turns the flat facet into a defected one with a
+    # single adsorption site at the defect (under-coordinated Zn).
 
-    if name == 'Zn(002)':
+    base, _, defect = name.partition('-')
+
+    if base == 'Zn(002)':
         slab = hcp0001('Zn', size=(3, 3, 4), vacuum=8.0, periodic=True)
-    elif name == 'Zn(100)':
+    elif base == 'Zn(100)':
         if hcp10m10 is None:
             raise RuntimeError('ase.build.hcp10m10 unavailable in this ASE')
 
@@ -133,17 +171,39 @@ def buildFacet(name):
 
     zRound = np.round(slab.positions[:, 2], 1)
     levels = np.unique(zRound)
-    nFix = len(levels) // 2
-    fixedIdx = np.where(np.isin(zRound, levels[:nFix]))[0]
+    fixedIdx = _fixBottomHalf(slab)
     slabTop = slab.positions[:, 2].max()
 
-    # atop / bridge / hollow built from the top-layer atom nearest the cell
-    # centre, so sites stay inside the cell away from periodic-image edges.
+    # Top-layer atom nearest the cell centre, plus its in-plane neighbours, so
+    # sites/defects stay inside the cell away from periodic-image edges.
 
     top = slab.positions[zRound == levels[-1]]
     centerXY = slab.cell[:2, :2].sum(axis=0) / 2.0
     A = top[np.argmin(np.linalg.norm(top[:, :2] - centerXY, axis=1))]
     nn = top[np.argsort(np.linalg.norm(top[:, :2] - A[:2], axis=1))]
+
+    if defect == 'adatom':
+        # Add one Zn at the hollow above A, ~2.0 Ang up: the new highest, most
+        # under-coordinated atom (a growth tip). The adsorbate sits atop it. The
+        # adatom is appended last, so fixedIdx (computed above) never includes it.
+        hollowXY = (A[:2] + nn[1][:2] + nn[2][:2]) / 3.0
+        slab += Atoms('Zn', positions=[(hollowXY[0], hollowXY[1], slabTop + 2.0)])
+        slabTop = slab.positions[:, 2].max()
+        return slab, fixedIdx, slabTop, [('adatom', hollowXY)]
+
+    if defect == 'vacancy':
+        # Remove the centre top-layer atom, exposing under-coordinated neighbours
+        # and the second layer; the adsorbate sits over the pocket.
+        ai = int(np.argmin(np.linalg.norm(slab.positions - A, axis=1)))
+        vacXY = A[:2].copy()
+        del slab[ai]
+        fixedIdx = _fixBottomHalf(slab)
+        slabTop = slab.positions[:, 2].max()
+        return slab, fixedIdx, slabTop, [('vacancy', vacXY)]
+
+    if defect:
+        raise ValueError(f'unknown defect {defect}')
+
     sites = [('atop', A[:2])]
     if len(nn) >= 2:
         sites.append(('bridge', (A[:2] + nn[1][:2]) / 2.0))
@@ -169,6 +229,17 @@ def placeAdsorbate(slab, slabTop, fixedIdx, spec, siteXY, height=2.0):
 
 
 
+def refEnergy(spec, aname, eGas, eH2):
+
+    # Reference (free) energy of an adsorbate's source state. Glycolate uses its
+    # dissociative 1/2 H2 reference; others use their own gas-phase energy.
+
+    if 'ref' in spec:
+        return spec['ref'](eGas, eH2)
+    return eGas[aname]
+
+
+
 def relax(atoms, logPath, trajPath=None):
     atoms.calc = calc
     opt = LBFGS(
@@ -183,134 +254,181 @@ def relax(atoms, logPath, trajPath=None):
 
 
 def slug(s):
-    return s.replace('(', '').replace(')', '')
+    return s.replace('(', '').replace(')', '').replace('-', '_')
+
+
+def classify(oZn):
+    # Label the adsorbate-surface contact from the min anchor-Zn distance (Ang).
+    if oZn < 2.4:
+        return 'chemisorbed'
+    if oZn <= 3.2:
+        return 'physisorbed'
+    return 'floating'
 
 
 
-runDir = getRunDir()
-print(f'Saving run output to {runDir}')
+def main():
+    global calc
 
-FACETS = ['Zn(002)', 'Zn(100)']
+    runDir = getRunDir()
+    print(f'Saving run output to {runDir}')
 
-# Geometry first (no calculator) so any geometry bug fails fast. Build every
-# facet and write the initial adsorbate placements for inspection.
+    FACETS = ['Zn(002)', 'Zn(100)', 'Zn(002)-adatom', 'Zn(002)-vacancy']
 
-facetData = {}
-for fname in FACETS:
-    try:
-        slab, fixedIdx, slabTop, sites = buildFacet(fname)
-    except Exception as exc: # noqa: BLE001 - skip unbuildable facet
-        print(f'  [skip {fname}] {exc}')
-        continue
+    # Geometry first (no calculator) so any geometry bug fails fast. Build every
+    # facet and write the initial adsorbate placements for inspection.
 
-    facetData[fname] = {
-        'slab': slab,
-        'fixedIdx': fixedIdx,
-        'slabTop': slabTop,
-        'sites': sites,
-    }
+    facetData = {}
+    for fname in FACETS:
+        try:
+            slab, fixedIdx, slabTop, sites = buildFacet(fname)
+        except Exception as exc: # noqa: BLE001 - skip unbuildable facet
+            print(f'  [skip {fname}] {exc}')
+            continue
 
-    print(
-        f'{fname}: {len(slab)} Zn, {len(np.unique(np.round(slab.positions[:,2],1)))} '
-        f'layers; fixing {len(fixedIdx)}, relaxing {len(slab)-len(fixedIdx)} + adsorbate; '
-        f'sites={[s[0] for s in sites]}'
-    )
-
-    for aname, spec in ADSORBATES.items():
-        system, nSlab = placeAdsorbate(slab, slabTop, fixedIdx, spec, sites[0][1])
-        write(runDir / f'init_{slug(fname)}_{aname}.xyz', system)
-        low = system.get_chemical_symbols()[nSlab + int(system.positions[nSlab:, 2].argmin())]
+        facetData[fname] = {
+            'slab': slab,
+            'fixedIdx': fixedIdx,
+            'slabTop': slabTop,
+            'sites': sites,
+        }
 
         print(
-            f'    init {aname:6s}: lowest atom {low} at gap '
-            f'{system.positions[nSlab:,2].min()-slabTop:.2f} Ang'
+            f'{fname}: {len(slab)} Zn, {len(np.unique(np.round(slab.positions[:,2],1)))} '
+            f'layers; fixing {len(fixedIdx)}, relaxing {len(slab)-len(fixedIdx)} + adsorbate; '
+            f'sites={[s[0] for s in sites]}'
         )
 
-if not facetData:
-    raise RuntimeError('no facets could be built')
+        for aname, spec in ADSORBATES.items():
+            system, nSlab = placeAdsorbate(slab, slabTop, fixedIdx, spec, sites[0][1])
+            write(runDir / f'init_{slug(fname)}_{aname}.xyz', system)
+            low = system.get_chemical_symbols()[nSlab + int(system.positions[nSlab:, 2].argmin())]
 
-# Load the model.
+            print(
+                f'    init {aname:9s}: lowest atom {low} at gap '
+                f'{system.positions[nSlab:,2].min()-slabTop:.2f} Ang'
+            )
 
-predictor = pretrained_mlip.get_predict_unit('uma-s-1p2', device='cuda')
-calc = FAIRChemCalculator(predictor, task_name='oc20')
+    if not facetData:
+        raise RuntimeError('no facets could be built')
 
-# Gas-phase references (facet-independent), computed once.
+    # Load the model.
 
-eGas = {}
-for aname, spec in ADSORBATES.items():
-    mol = spec['build']()
-    mol.set_cell([20.0, 20.0, 20.0])
-    mol.center()
-    mol.pbc = True
-    relax(mol, runDir / f'ref_gas_{aname}.log')
-    eGas[aname] = mol.get_potential_energy()
-    write(runDir / f'ref_gas_{aname}.xyz', mol)
+    predictor = pretrained_mlip.get_predict_unit('uma-s-1p2', device='cuda')
+    calc = FAIRChemCalculator(predictor, task_name='oc20')
 
-print('Gas references (eV): ' + ', '.join(f'{k}={v:.3f}' for k, v in eGas.items()))
+    # Gas-phase references (facet-independent), computed once. Adsorbates with a
+    # `ref` (glycolate) have no own gas molecule; their reference is built from
+    # glycol + 1/2 H2, so H2 is relaxed here too.
 
-# Per facet: relax the clean slab once, then scan each adsorbate over the sites
-# and keep the strongest (most negative E_ads). E_ads = E(slab+ads) - E(slab) - E_gas.
-
-results = {}
-for fname, fd in facetData.items():
-    clean = fd['slab'].copy()
-    clean.set_constraint(FixAtoms(indices=fd['fixedIdx']))
-    relax(clean, runDir / f'ref_slab_{slug(fname)}.log', runDir / f'ref_slab_{slug(fname)}.traj')
-    eSlab = clean.get_potential_energy()
-    write(runDir / f'ref_slab_{slug(fname)}.xyz', clean)
-    print(f'\n{fname}: E_slab = {eSlab:.3f} eV')
-
-    best = {}
+    eGas = {}
     for aname, spec in ADSORBATES.items():
-        scan = []
+        if 'ref' in spec:
+            continue
+        mol = spec['build']()
+        mol.set_cell([20.0, 20.0, 20.0])
+        mol.center()
+        mol.pbc = True
+        relax(mol, runDir / f'ref_gas_{aname}.log')
+        eGas[aname] = mol.get_potential_energy()
+        write(runDir / f'ref_gas_{aname}.xyz', mol)
 
-        for sname, xy in fd['sites']:
-            system, nSlab = placeAdsorbate(fd['slab'], fd['slabTop'], fd['fixedIdx'], spec, xy)
-            tag = f'{slug(fname)}_{aname}_{sname}'
+    h2 = Atoms('H2', positions=[(0, 0, 0), (0, 0, 0.74)])
+    h2.set_cell([20.0, 20.0, 20.0])
+    h2.center()
+    h2.pbc = True
+    relax(h2, runDir / 'ref_gas_H2.log')
+    eH2 = h2.get_potential_energy()
+    write(runDir / 'ref_gas_H2.xyz', h2)
 
-            relax(system, runDir / f'opt_{tag}.log', runDir / f'opt_{tag}.traj')
-            write(runDir / f'final_{tag}.xyz', system)
+    print('Gas references (eV): ' + ', '.join(f'{k}={v:.3f}' for k, v in eGas.items())
+          + f', H2={eH2:.3f}')
 
-            eAds = system.get_potential_energy() - eSlab - eGas[aname]
-            oZn = np.linalg.norm(system.positions[:nSlab] - system.positions[nSlab + spec['anchor']], axis=1).min()
-            gap = system.positions[nSlab:, 2].min() - fd['slabTop']
+    # Per facet: relax the clean slab once, then scan each adsorbate over the sites
+    # and keep the strongest (most negative E_ads). E_ads = E(slab+ads) - E(slab) - E_gas.
 
-            scan.append({'site': sname, 'eAds': eAds, 'oZn': oZn, 'gap': gap, 'atoms': system})
-            print(f'    {aname:6s} {sname:7s}: E_ads = {eAds:+.3f} eV  O-Zn = {oZn:.2f}  gap = {gap:.2f}')
+    results = {}
+    for fname, fd in facetData.items():
+        clean = fd['slab'].copy()
+        clean.set_constraint(FixAtoms(indices=fd['fixedIdx']))
+        relax(clean, runDir / f'ref_slab_{slug(fname)}.log', runDir / f'ref_slab_{slug(fname)}.traj')
+        eSlab = clean.get_potential_energy()
+        write(runDir / f'ref_slab_{slug(fname)}.xyz', clean)
+        print(f'\n{fname}: E_slab = {eSlab:.3f} eV')
 
-        b = min(scan, key=lambda r: r['eAds'])
-        best[aname] = b
-        write(runDir / f'best_{slug(fname)}_{aname}.xyz', b['atoms'])
-        print(f'  best {aname}: {b["site"]}  E_ads = {b["eAds"]:+.3f} eV  O-Zn = {b["oZn"]:.2f} Ang')
+        best = {}
+        for aname, spec in ADSORBATES.items():
+            eRef = refEnergy(spec, aname, eGas, eH2)
+            scan = []
 
-    dE = best['glycol']['eAds'] - best['water']['eAds']
-    results[fname] = {'eSlab': eSlab, 'best': best, 'dE': dE}
+            for sname, xy in fd['sites']:
+                system, nSlab = placeAdsorbate(fd['slab'], fd['slabTop'], fd['fixedIdx'], spec, xy)
+                tag = f'{slug(fname)}_{aname}_{sname}'
 
-# Summary: the competitive quantity dE = E_ads(glycol) - E_ads(water) per facet.
+                relax(system, runDir / f'opt_{tag}.log', runDir / f'opt_{tag}.traj')
+                write(runDir / f'final_{tag}.xyz', system)
 
-lines = [
-    'Competitive adsorption: ethylene glycol vs H2O on Zn facets',
-    'dE = E_ads(glycol) - E_ads(water);  dE < 0 => glycol can displace water',
-    f'Gas refs (eV): ' + ', '.join(f'{k}={v:.3f}' for k, v in eGas.items()),
-    '',
-    f'{"facet":10s} {"E_ads(water)":>13s} {"E_ads(glycol)":>14s} {"dE":>8s}   verdict',
-]
+                eAds = system.get_potential_energy() - eSlab - eRef
+                oZn = np.linalg.norm(system.positions[:nSlab] - system.positions[nSlab + spec['anchor']], axis=1).min()
+                gap = system.positions[nSlab:, 2].min() - fd['slabTop']
 
-for fname, r in results.items():
-    w = r['best']['water']['eAds']
-    g = r['best']['glycol']['eAds']
-    verdict = 'glycol displaces water' if r['dE'] < 0 else 'water wins (glycol cannot displace)'
-    lines.append(f'{fname:10s} {w:>13.3f} {g:>14.3f} {r["dE"]:>+8.3f}   {verdict}')
+                scan.append({'site': sname, 'eAds': eAds, 'oZn': oZn, 'gap': gap, 'atoms': system})
+                print(f'    {aname:9s} {sname:7s}: E_ads = {eAds:+.3f} eV  O-Zn = {oZn:.2f}  gap = {gap:.2f}')
 
-lines += [
-    '',
-    'Note: neutral molecules, vacuum, no applied potential/explicit electrolyte.',
-    'Treat as relative mechanistic screening, not absolute interfacial energetics.',
-    'Trust dE (a difference) far more than the individual absolute E_ads values.',
-]
+            b = min(scan, key=lambda r: r['eAds'])
+            best[aname] = b
+            write(runDir / f'best_{slug(fname)}_{aname}.xyz', b['atoms'])
+            print(f'  best {aname}: {b["site"]}  E_ads = {b["eAds"]:+.3f} eV  '
+                  f'O-Zn = {b["oZn"]:.2f} Ang  ({classify(b["oZn"])})')
 
-summary = '\n'.join(lines)
-(runDir / 'summary.txt').write_text(summary)
+        dEdisplace = best['glycol']['eAds'] - best['water']['eAds']
+        dEdeprot = best['glycolate']['eAds'] - best['glycol']['eAds']
+        results[fname] = {'eSlab': eSlab, 'best': best,
+                          'dEdisplace': dEdisplace, 'dEdeprot': dEdeprot}
 
-print('\n' + summary)
-print(f'\nDone. Output written to {runDir}')
+    # Summary.
+
+    lines = [
+        'Hunting a chemisorbed state: glycol / water / glycolate on Zn facets + defects',
+        'E_ads(glycolate) is a DISSOCIATIVE energy referenced to 1/2 H2 (not a molecular',
+        '  adsorption energy): glycol(g) + slab -> glycolate(O-bound) + 1/2 H2(g).',
+        'dE_displace = E_ads(glycol) - E_ads(water)    ; <0 => glycol out-binds water',
+        'dE_deprot   = E_ads(glycolate) - E_ads(glycol); <0 => deprotonation deepens binding',
+        f'Gas refs (eV): ' + ', '.join(f'{k}={v:.3f}' for k, v in eGas.items()) + f', H2={eH2:.3f}',
+        '',
+        f'{"facet":16s} {"E_ads(water)":>12s} {"E_ads(glycol)":>13s} {"E_ads(glycolate)":>16s}'
+        f' {"dE_displace":>11s} {"dE_deprot":>9s}',
+    ]
+
+    for fname, r in results.items():
+        w = r['best']['water']['eAds']
+        g = r['best']['glycol']['eAds']
+        gl = r['best']['glycolate']['eAds']
+        lines.append(
+            f'{fname:16s} {w:>12.3f} {g:>13.3f} {gl:>16.3f}'
+            f' {r["dEdisplace"]:>+11.3f} {r["dEdeprot"]:>+9.3f}'
+        )
+
+    lines += ['', 'Per-adsorbate best contact (min anchor-Zn distance):']
+    for fname, r in results.items():
+        for aname in ('water', 'glycol', 'glycolate'):
+            b = r['best'][aname]
+            lines.append(f'  {fname:16s} {aname:9s}: O-Zn = {b["oZn"]:.2f} Ang  ({classify(b["oZn"])})')
+
+    lines += [
+        '',
+        'Note: neutral fragments, vacuum, no applied potential/explicit electrolyte.',
+        'Treat as relative mechanistic screening, not absolute interfacial energetics.',
+        'A chemisorbed (O-Zn < 2.4 Ang) glycolate or defect-site binding is the signal',
+        'that the neutral flat-terrace floating is lifted by deprotonation / under-coordination.',
+    ]
+
+    summary = '\n'.join(lines)
+    (runDir / 'summary.txt').write_text(summary)
+
+    print('\n' + summary)
+    print(f'\nDone. Output written to {runDir}')
+
+
+if __name__ == '__main__':
+    main()
