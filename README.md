@@ -8,7 +8,7 @@ Using Meta's FAIRChem UMA to test whether electrolyte additives can out-compete 
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.8.0%2Bcu128-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
 ![FAIRChem](https://img.shields.io/badge/fairchem--core-2.21.0-0467DF?style=for-the-badge&logo=meta&logoColor=white)
 ![CUDA](https://img.shields.io/badge/CUDA-12.8-76B900?style=for-the-badge&logo=nvidia&logoColor=white)
-![License](https://img.shields.io/badge/License-All%20Rights%20Reserved-lightgrey?style=for-the-badge)
+![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![Build](https://img.shields.io/badge/Build-local-informational?style=for-the-badge)
 
 </div>
