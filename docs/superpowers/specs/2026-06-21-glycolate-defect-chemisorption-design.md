@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-21
 **Status:** approved (user delegated all technical decisions — "just do")
-**Builds on:** `compete-glycol-water-1` (see `stdout/artifacts/`), memories
+**Builds on:** `compete-glycol-water-1` (see `data/`), memories
 `peg1-zn002-weak-binding`, `azib-research-direction`, `uma-oc20-no-dispersion-underbinds`.
 
 ## Problem
