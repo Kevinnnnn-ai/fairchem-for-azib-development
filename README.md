@@ -2,7 +2,7 @@
 
 # FAIR Chemistry for Aqueous Zinc-Ion Battery (AZIB) Development
 
-An atomistic screening tool that uses Meta's FAIRChem UMA ML interatomic potential to test whether electrolyte additives—ethylene glycol and its deprotonated alkoxide (glycolate)—can out-compete water for adsorption sites on zinc surfaces.
+Using Meta's FAIRChem UMA to test whether electrolyte additives—ethylene glycol and alkoxide (glycolate)—can out-compete water for adsorption on zinc surfaces.
 
 ![Python](https://img.shields.io/badge/Python-3.11%E2%80%933.13-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.8.0%2Bcu128-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
