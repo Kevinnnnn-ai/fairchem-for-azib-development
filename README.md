@@ -254,7 +254,7 @@ Not under version control: `stdout/runs/` (where new runs write), `.env` (holds 
 ### Key entry points
 
 - **`main()`** — the full screening pipeline: builds facets, loads the model, computes references, scans sites, and writes every artifact plus `summary.txt`.
-- **`buildFacet(name)`** — returns `(slab, fixedIdx, slabTop, sites)` for `'Zn(002)'`, `'Zn(100)'`, `'Zn(002)-adatom'`, or `'Zn(002)-vacancy'`, fixing the bottom half of the layers.
+- **`buildFacet(name)`** — returns `(slab, fixedIndices, slabTop, sites)` for `'Zn(002)'`, `'Zn(100)'`, `'Zn(002)-adatom'`, or `'Zn(002)-vacancy'`, fixing the bottom half of the layers.
 - **`ADSORBATES`** — the registry of water, glycol, and glycolate, including how each is built, anchored, oriented, and referenced.
 - **`relax(atoms, logPath, trajPath=None)`** — runs an ASE `LBFGS` relaxation with the shared FAIRChem calculator (`fmax=0.05`, `steps=300`).
 - **`classify(oZn)`** — maps a minimum anchor-to-Zn distance to `chemisorbed` / `physisorbed` / `floating`.

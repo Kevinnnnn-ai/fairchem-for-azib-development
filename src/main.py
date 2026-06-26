@@ -8,6 +8,7 @@ from ase.optimize import LBFGS
 from fairchem.core import pretrained_mlip, FAIRChemCalculator
 
 # Zn(100) prismatic facet is optional—only present in newer ASE.
+
 try:
     from ase.build import hcp10m10
 except ImportError:
@@ -34,9 +35,8 @@ except ImportError:
 # The FAIRChem calculator is created once inside main() and shared via this
 # module global (relax() reads it). It stays None until a run starts, so the
 # module can be imported for testing without loading the model.
+
 calc = None
-
-
 
 def getRunDir(prefix='glycolate-defect'):
     runDirRoot = Path(__file__).resolve().parent.parent / 'stdout' / 'runs'
@@ -111,10 +111,12 @@ def buildWater():
 # dissociative 1/2 H2 reference; water/glycol fall back to their own gas energy.
 
 ADSORBATES = {
-    'water':     {'build': buildWater,     'anchor': 0, 'neighbours': (1, 2)},
-    'glycol':    {'build': buildGlycol,    'anchor': 2, 'neighbours': (0, 8)},
-    'glycolate': {'build': buildGlycolate, 'anchor': 2, 'neighbours': (0,),
-                  'ref': lambda eGas, eH2: eGas['glycol'] - 0.5 * eH2},
+    'water':     {'build': buildWater, 'anchor': 0, 'neighbours': (1, 2)},
+    'glycol':    {'build': buildGlycol, 'anchor': 2, 'neighbours': (0, 8)},
+    'glycolate': {
+        'build': buildGlycolate, 'anchor': 2, 'neighbours': (0,),
+        'ref': lambda eGas, eH2: eGas['glycol'] - 0.5 * eH2
+    },
 }
 
 
@@ -132,6 +134,7 @@ def orientAnchorDown(mol, anchor, neighbours):
     for nb in neighbours:
         v = m.positions[nb] - aPos
         bis += v / np.linalg.norm(v)
+
     bis /= np.linalg.norm(bis)
     m.rotate(bis, (0, 0, 1), center=aPos)
     return m
@@ -139,21 +142,24 @@ def orientAnchorDown(mol, anchor, neighbours):
 
 
 def _fixBottomHalf(slab):
+
     # Fix the bottom half of the atomic z-levels (hold the bulk); return indices.
+    
     zRound = np.round(slab.positions[:, 2], 1)
     levels = np.unique(zRound)
     nFix = len(levels) // 2
     return np.where(np.isin(zRound, levels[:nFix]))[0]
 
 
+
 def buildFacet(name):
 
-    # Return (slab, fixedIdx, slabTop, sites). Fix the bottom half of the atomic
+    # Return (slab, fixedIndices, slabTop, sites). Fix the bottom half of the atomic
     # layers (hold the bulk) and relax the top half + adsorbate. A 'Zn(002)-adatom'
     # or 'Zn(002)-vacancy' suffix turns the flat facet into a defected one with a
     # single adsorption site at the defect (under-coordinated Zn).
 
-    base, _, defect = name.partition('-')
+    base, a, defect = name.partition('-')
 
     if base == 'Zn(002)':
         slab = hcp0001('Zn', size=(3, 3, 4), vacuum=8.0, periodic=True)
@@ -169,9 +175,11 @@ def buildFacet(name):
     else:
         raise ValueError(f'unknown facet {name}')
 
+
+
     zRound = np.round(slab.positions[:, 2], 1)
     levels = np.unique(zRound)
-    fixedIdx = _fixBottomHalf(slab)
+    fixedIndices = _fixBottomHalf(slab)
     slabTop = slab.positions[:, 2].max()
 
     # Top-layer atom nearest the cell centre, plus its in-plane neighbours, so
@@ -182,24 +190,35 @@ def buildFacet(name):
     A = top[np.argmin(np.linalg.norm(top[:, :2] - centerXY, axis=1))]
     nn = top[np.argsort(np.linalg.norm(top[:, :2] - A[:2], axis=1))]
 
+
+
     if defect == 'adatom':
+
         # Add one Zn at the hollow above A, ~2.0 Ang up: the new highest, most
         # under-coordinated atom (a growth tip). The adsorbate sits atop it. The
-        # adatom is appended last, so fixedIdx (computed above) never includes it.
+        # adatom is appended last, so fixedIndices (computed above) never includes it.
+
         hollowXY = (A[:2] + nn[1][:2] + nn[2][:2]) / 3.0
         slab += Atoms('Zn', positions=[(hollowXY[0], hollowXY[1], slabTop + 2.0)])
         slabTop = slab.positions[:, 2].max()
-        return slab, fixedIdx, slabTop, [('adatom', hollowXY)]
+        return slab, fixedIndices, slabTop, [('adatom', hollowXY)]
+
+
 
     if defect == 'vacancy':
+
         # Remove the centre top-layer atom, exposing under-coordinated neighbours
         # and the second layer; the adsorbate sits over the pocket.
+
         ai = int(np.argmin(np.linalg.norm(slab.positions - A, axis=1)))
         vacXY = A[:2].copy()
         del slab[ai]
-        fixedIdx = _fixBottomHalf(slab)
+
+        fixedIndices = _fixBottomHalf(slab)
         slabTop = slab.positions[:, 2].max()
-        return slab, fixedIdx, slabTop, [('vacancy', vacXY)]
+        return slab, fixedIndices, slabTop, [('vacancy', vacXY)]
+
+
 
     if defect:
         raise ValueError(f'unknown defect {defect}')
@@ -207,13 +226,15 @@ def buildFacet(name):
     sites = [('atop', A[:2])]
     if len(nn) >= 2:
         sites.append(('bridge', (A[:2] + nn[1][:2]) / 2.0))
+
     if len(nn) >= 3:
         sites.append(('hollow', (A[:2] + nn[1][:2] + nn[2][:2]) / 3.0))
-    return slab, fixedIdx, slabTop, sites
+
+    return slab, fixedIndices, slabTop, sites
 
 
 
-def placeAdsorbate(slab, slabTop, fixedIdx, spec, siteXY, height=2.0):
+def placeAdsorbate(slab, slabTop, fixedIndices, spec, siteXY, height=2.0):
 
     # Build an O-down adsorbate with its anchor O placed `height` Ang directly
     # above the site, return the combined constrained system and slab size.
@@ -224,7 +245,7 @@ def placeAdsorbate(slab, slabTop, fixedIdx, spec, siteXY, height=2.0):
     ads.positions[:, 2] += (slabTop + height) - ads.positions[a, 2]
     system = slab.copy()
     system += ads
-    system.set_constraint(FixAtoms(indices=fixedIdx))
+    system.set_constraint(FixAtoms(indices=fixedIndices))
     return system, len(slab)
 
 
@@ -257,8 +278,11 @@ def slug(s):
     return s.replace('(', '').replace(')', '').replace('-', '_')
 
 
+
 def classify(oZn):
+
     # Label the adsorbate-surface contact from the min anchor-Zn distance (Ang).
+
     if oZn < 2.4:
         return 'chemisorbed'
     if oZn <= 3.2:
@@ -275,32 +299,34 @@ def main():
 
     FACETS = ['Zn(002)', 'Zn(100)', 'Zn(002)-adatom', 'Zn(002)-vacancy']
 
+
+
     # Geometry first (no calculator) so any geometry bug fails fast. Build every
     # facet and write the initial adsorbate placements for inspection.
 
     facetData = {}
     for fname in FACETS:
         try:
-            slab, fixedIdx, slabTop, sites = buildFacet(fname)
+            slab, fixedIndices, slabTop, sites = buildFacet(fname)
         except Exception as exc: # noqa: BLE001 - skip unbuildable facet
             print(f'  [skip {fname}] {exc}')
             continue
 
         facetData[fname] = {
             'slab': slab,
-            'fixedIdx': fixedIdx,
+            'fixedIndices': fixedIndices,
             'slabTop': slabTop,
             'sites': sites,
         }
 
         print(
             f'{fname}: {len(slab)} Zn, {len(np.unique(np.round(slab.positions[:,2],1)))} '
-            f'layers; fixing {len(fixedIdx)}, relaxing {len(slab)-len(fixedIdx)} + adsorbate; '
+            f'layers; fixing {len(fixedIndices)}, relaxing {len(slab)-len(fixedIndices)} + adsorbate; '
             f'sites={[s[0] for s in sites]}'
         )
 
         for aname, spec in ADSORBATES.items():
-            system, nSlab = placeAdsorbate(slab, slabTop, fixedIdx, spec, sites[0][1])
+            system, nSlab = placeAdsorbate(slab, slabTop, fixedIndices, spec, sites[0][1])
             write(runDir / f'init_{slug(fname)}_{aname}.xyz', system)
             low = system.get_chemical_symbols()[nSlab + int(system.positions[nSlab:, 2].argmin())]
 
@@ -309,6 +335,8 @@ def main():
                 f'{system.positions[nSlab:,2].min()-slabTop:.2f} Ang'
             )
 
+
+
     if not facetData:
         raise RuntimeError('no facets could be built')
 
@@ -316,6 +344,8 @@ def main():
 
     predictor = pretrained_mlip.get_predict_unit('uma-s-1p2', device='cuda')
     calc = FAIRChemCalculator(predictor, task_name='oc20')
+
+
 
     # Gas-phase references (facet-independent), computed once. Adsorbates with a
     # `ref` (glycolate) have no own gas molecule; their reference is built from
@@ -344,13 +374,15 @@ def main():
     print('Gas references (eV): ' + ', '.join(f'{k}={v:.3f}' for k, v in eGas.items())
           + f', H2={eH2:.3f}')
 
+
+
     # Per facet: relax the clean slab once, then scan each adsorbate over the sites
     # and keep the strongest (most negative E_ads). E_ads = E(slab+ads) - E(slab) - E_gas.
 
     results = {}
     for fname, fd in facetData.items():
         clean = fd['slab'].copy()
-        clean.set_constraint(FixAtoms(indices=fd['fixedIdx']))
+        clean.set_constraint(FixAtoms(indices=fd['fixedIndices']))
         relax(clean, runDir / f'ref_slab_{slug(fname)}.log', runDir / f'ref_slab_{slug(fname)}.traj')
         eSlab = clean.get_potential_energy()
         write(runDir / f'ref_slab_{slug(fname)}.xyz', clean)
@@ -362,7 +394,7 @@ def main():
             scan = []
 
             for sname, xy in fd['sites']:
-                system, nSlab = placeAdsorbate(fd['slab'], fd['slabTop'], fd['fixedIdx'], spec, xy)
+                system, nSlab = placeAdsorbate(fd['slab'], fd['slabTop'], fd['fixedIndices'], spec, xy)
                 tag = f'{slug(fname)}_{aname}_{sname}'
 
                 relax(system, runDir / f'opt_{tag}.log', runDir / f'opt_{tag}.traj')
@@ -386,6 +418,8 @@ def main():
         results[fname] = {'eSlab': eSlab, 'best': best,
                           'dEdisplace': dEdisplace, 'dEdeprot': dEdeprot}
 
+
+
     # Summary.
 
     lines = [
@@ -400,6 +434,8 @@ def main():
         f' {"dE_displace":>11s} {"dE_deprot":>9s}',
     ]
 
+
+
     for fname, r in results.items():
         w = r['best']['water']['eAds']
         g = r['best']['glycol']['eAds']
@@ -409,11 +445,15 @@ def main():
             f' {r["dEdisplace"]:>+11.3f} {r["dEdeprot"]:>+9.3f}'
         )
 
+
+
     lines += ['', 'Per-adsorbate best contact (min anchor-Zn distance):']
     for fname, r in results.items():
         for aname in ('water', 'glycol', 'glycolate'):
             b = r['best'][aname]
             lines.append(f'  {fname:16s} {aname:9s}: O-Zn = {b["oZn"]:.2f} Ang  ({classify(b["oZn"])})')
+
+
 
     lines += [
         '',
@@ -423,11 +463,14 @@ def main():
         'that the neutral flat-terrace floating is lifted by deprotonation / under-coordination.',
     ]
 
+
+
     summary = '\n'.join(lines)
     (runDir / 'summary.txt').write_text(summary)
 
     print('\n' + summary)
     print(f'\nDone. Output written to {runDir}')
+
 
 
 if __name__ == '__main__':

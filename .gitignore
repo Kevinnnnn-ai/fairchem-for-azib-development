@@ -7,3 +7,8 @@
 # Python bytecode
 __pycache__/
 *.py[cod]
+
+# Local output
+stdout/artifacts/*
+stdout/runs/*
+tmp/*
